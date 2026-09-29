@@ -1,7 +1,14 @@
 // async & chokidar Code written by Cal2195
 // Was originally added to `main-extract.ts` but was moved here for clarity
 
-const { powerSaveBlocker } = require('electron');
+// `electron` isn't installed at all in a headless/CLI context (it's a devDependency
+// there), so `require('electron')` throws rather than resolving to anything - catch it.
+let powerSaveBlocker: any;
+try {
+  ({ powerSaveBlocker } = require('electron'));
+} catch {
+  powerSaveBlocker = null;
+}
 const async = require('async');
 const chokidar = require('chokidar');
 import * as path from 'path';
@@ -542,10 +549,14 @@ function deleteThumbQueueRunner(pathToFile: string, done): void {
 
 /**
  * Prevent PC from going to sleep during screenshot extraction
+ * (no-op outside Electron, e.g. when run headlessly - `require('electron')`
+ * resolves to a path string there, so `powerSaveBlocker` is undefined)
  */
 export function preventSleep(): void {
   console.log('preventing sleep');
-  preventSleepIds.push(powerSaveBlocker.start('prevent-app-suspension'));
+  if (typeof powerSaveBlocker?.start === 'function') {
+    preventSleepIds.push(powerSaveBlocker.start('prevent-app-suspension'));
+  }
 }
 
 /**
@@ -553,12 +564,22 @@ export function preventSleep(): void {
  */
 function allowSleep(): void {
   console.log('allowing sleep');
-  if (preventSleepIds.length) {
+  if (preventSleepIds.length && typeof powerSaveBlocker?.stop === 'function') {
     preventSleepIds.forEach((id: number) => {
       powerSaveBlocker.stop(id);
     });
   }
   preventSleepIds = [];
+}
+
+/**
+ * Whether the metadata & thumbnail extraction queues have nothing left to do.
+ * Used by headless callers (no Electron renderer to receive `thumbQueue.drain()`'s
+ * `import-progress-update` 'done' event) to detect completion, including the case
+ * where a rescan finds zero new files and the queues never receive anything to drain.
+ */
+export function queuesAreIdle(): boolean {
+  return (!metadataQueue || metadataQueue.idle()) && (!thumbQueue || thumbQueue.idle());
 }
 
 function logPerformance(message: string, initial: number): void {

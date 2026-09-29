@@ -63,6 +63,10 @@ To help debug a production build of VHA you can use [Debugtron](https://github.c
 
 For details, see [instructions](https://github.com/whyboris/Video-Hub-App/blob/master/remote/README.md).
 
+## Headless hub building
+
+`Containerfile` runs just the scan + thumbnail-extraction pipeline (no Electron/GUI), for building or updating a hub on a server/NAS where the media lives. See [docs/headless-import-truenas.md](docs/headless-import-truenas.md).
+
 ## Thank you
 
 This software would not be possible without the tremendous work by other people:

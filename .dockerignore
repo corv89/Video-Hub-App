@@ -1,0 +1,14 @@
+.git
+.angular
+node_modules
+dist
+release
+out-tsc
+app-builds
+src
+remote
+*.AppImage
+*.dmg
+*.exe
+*.log
+.DS_Store
