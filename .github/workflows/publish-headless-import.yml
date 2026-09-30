@@ -1,0 +1,40 @@
+name: Publish headless-import image
+
+# Manual only - does not run on push/PR. Builds Containerfile on a GitHub-hosted
+# runner and pushes to ghcr.io/corv89 (not this repo's own ghcr.io/whyboris
+# namespace), so it needs a personal access token from that account rather
+# than the default GITHUB_TOKEN. See docs/headless-import-truenas.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (in addition to the automatic sha-<short-sha> tag)"
+        required: false
+        default: "latest"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io/corv89
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: corv89
+          password: ${{ secrets.CORV89_GHCR_PAT }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          tags: |
+            ghcr.io/corv89/vha-headless-import:${{ github.event.inputs.tag }}
+            ghcr.io/corv89/vha-headless-import:sha-${{ github.sha }}

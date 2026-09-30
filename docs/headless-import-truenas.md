@@ -15,35 +15,66 @@ actually browse/search it.
 
 ## 1. Build and push the image
 
-TrueNAS SCALE 25.10's container support ("Instances") doesn't build from a
-Dockerfile itself - you build the image elsewhere and point TrueNAS at a
-registry reference. Build it on your Fedora or Ubuntu VM (or anywhere with
-Docker/Podman and network access to a registry TrueNAS can reach):
+TrueNAS SCALE 25.10's Docker-based **Apps** system doesn't build from a
+Containerfile/Dockerfile itself - you build the image elsewhere and point it
+at a registry reference. Note that this is a different subsystem from
+**Instances** (the Incus/LXC jail system): Instances' OCI/registry pull
+support is broken on 25.10 (Debian hasn't backported the needed OCI protocol
+changes), so it can't be used for this even though it also has an "Add from
+image" style flow. Use **Apps**, not Instances.
+
+Two ways to get the image built and pushed to `ghcr.io/corv89/vha-headless-import`:
+
+**Option A - GitHub Actions (no local Docker needed).** Run the
+`Publish headless-import image` workflow
+(`.github/workflows/publish-headless-import.yml`) from the Actions tab, or:
+
+```bash
+gh workflow run publish-headless-import.yml -f tag=latest
+```
+
+It builds on a GitHub-hosted runner and pushes
+`ghcr.io/corv89/vha-headless-import:<tag>` and `:sha-<commit>`. It needs a
+`CORV89_GHCR_PAT` repo secret first - a classic PAT from the `corv89` GitHub
+account with `write:packages` scope (GHCR pushes to a namespace other than
+the repo's own owner can't use the default `GITHUB_TOKEN`).
+
+**Option B - build locally** on any machine with Docker/Podman:
 
 ```bash
 git clone https://github.com/whyboris/Video-Hub-App.git
 cd Video-Hub-App
 git checkout feature/headless-import-container   # or main, once merged
 
-docker build -f Containerfile -t <your-registry>/vha-headless-import:latest .
-docker push <your-registry>/vha-headless-import:latest
+docker build -f Containerfile -t ghcr.io/corv89/vha-headless-import:latest .
+docker login ghcr.io -u corv89   # PAT with write:packages, as above
+docker push ghcr.io/corv89/vha-headless-import:latest
 ```
 
-(`<your-registry>` can be Docker Hub, GHCR, or a local registry reachable
-from the TrueNAS VM - whatever you already use.)
+By default a new GHCR package is **private**. Either make it public
+(package settings on GitHub → Change visibility), or set up registry
+credentials in TrueNAS as covered below.
 
 ## 2. Set it up in TrueNAS
 
-*Instances → Add Instance → Browse Catalog*, and enter the image reference you
-pushed above.
+*Apps → Discover → Custom App* (or *Install via YAML* for the docker-compose
+form). Set:
+- **Repository**: `ghcr.io/corv89/vha-headless-import`
+- **Tag**: `latest` (or `sha-<commit>` for a pinned build)
 
-**Disks** - add one entry per path this container needs:
+If the package is private, add credentials first under *Apps → Discover →
+Manage Container Images → Pull Image* (hostname `ghcr.io`, username
+`corv89`, password = a PAT with `read:packages`) - TrueNAS then uses those
+automatically on pulls of that repository.
+
+**Storage → Host Path** - add one mount per path this container needs:
 - Each source media dataset, **read-write** (the scan needs at least read
   access; see the note on this below), destination e.g. `/media/movies`
 - One output dataset for the generated hub, destination e.g. `/output`
 
-**Environment variables** (see `node/headless-import.ts` for the full list -
-these are the required ones plus the common optional ones):
+**Environment variables** (under Container Configuration; see
+`node/headless-import.ts` for the full list - these are the required ones
+plus the common optional ones):
 
 | Variable | Example | Notes |
 |---|---|---|
@@ -62,10 +93,11 @@ the scan and exits.
 The container runs the scan to completion, writes/updates the `.vha2` file,
 and exits (0 on success). Re-run it whenever you add new videos to the source
 folders - already-extracted files are detected by content hash and skipped,
-so re-runs are cheap. On TrueNAS you can just re-run the Instance manually, or
-set up a periodic Cron Job/Init/Shutdown Script that starts it on a schedule.
+so re-runs are cheap. On TrueNAS you can just re-run the App manually (it's a
+run-to-completion job, not a long-running service), or set up a periodic Cron
+Job/Init/Shutdown Script that starts it on a schedule.
 
-If the container is stopped mid-scan (`docker stop` / Instance stop sends
+If the container is stopped mid-scan (`docker stop` / stopping the App sends
 `SIGTERM`), it writes whatever it has extracted so far before exiting, rather
 than losing that work.
 
